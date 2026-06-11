@@ -32,14 +32,21 @@ extraction/editing, `swift build` of this package alone (CPU, small), weight dow
 
 ## Weights & key layout
 
-- Runtime: `mlx-community/Qwen2.5-VL-3B-Instruct-4bit` (~2.2 GB). Reference for parity:
-  `mlx-community/Qwen2.5-VL-3B-Instruct-bf16` (~7 GB). Both Apache-2.0.
-- **Verify the actual key prefixes on download** (mlx-vlm convention is
-  `language_model.model.*` + `vision_tower.*`; HF original is `model.*` + `visual.*`)
-  — write the loader against what the files actually ship (pitfall #13: keys, not config).
-- Processor constants from `Qwen/Qwen2.5-VL-3B-Instruct` `preprocessor_config.json`
-  (smart-resize min/max pixels; do NOT hardcode from memory — read the file).
-- Tokenizer via swift-transformers from the same repo (as lance-mlx-swift already does).
+- Runtime: `mlx-community/Qwen2.5-VL-3B-Instruct-4bit`. Parity reference:
+  `mlx-community/Qwen2.5-VL-3B-Instruct-bf16`. Both Apache-2.0. **DOWNLOADED
+  (2026-06-11)** to `/Volumes/DEV_VOL1/VideoResearch/qwen25vl-mlx-models/`
+  (4bit 2.9 GB / bf16 7.0 GB).
+- **Key layout VERIFIED from the safetensors headers:** `language_model.model.*` +
+  `vision_tower.{patch_embed,blocks,merger}.*` (mlx-vlm convention — same vit prefix
+  Lance used, minimal loader churn). bf16 = 824 tensors; 4bit = 1330 (quant
+  scales/biases — loader must handle MLX quantized-layer keys).
+- **Tied head CONFIRMED:** no `lm_head.*` in either variant → logits via
+  `embed_tokens` weight (`asLinear`). Config-driven for future 7B+ (untied).
+- **Self-contained checkpoint** (unlike Lance): ships `preprocessor_config.json`,
+  `chat_template.json`, full tokenizer files — read smart-resize min/max pixels and the
+  chat template from the local snapshot; no `Qwen/Qwen2.5-VL-3B-Instruct` side-fetch.
+- bf16 is sharded (`model-0000N-of-00002.safetensors` + index json) — loader must
+  handle multi-shard; 4bit may be single-file (check at load).
 
 ## What changes vs Lance (checklist of deltas — each was a verified Lance-side finding)
 
