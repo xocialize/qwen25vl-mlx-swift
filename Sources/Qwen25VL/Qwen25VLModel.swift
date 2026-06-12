@@ -157,10 +157,10 @@ public final class QVLAttention: Module {
 
 /// Standard pre-norm decoder layer.
 public final class QVLDecoderLayer: Module {
-    @ModuleInfo(key: "self_attn") var attention: QVLAttention
-    @ModuleInfo(key: "mlp") var mlp: QVLMLP
-    @ModuleInfo(key: "input_layernorm") var inputNorm: RMSNorm
-    @ModuleInfo(key: "post_attention_layernorm") var postNorm: RMSNorm
+    @ModuleInfo(key: "self_attn") public var attention: QVLAttention
+    @ModuleInfo(key: "mlp") public var mlp: QVLMLP
+    @ModuleInfo(key: "input_layernorm") public var inputNorm: RMSNorm
+    @ModuleInfo(key: "post_attention_layernorm") public var postNorm: RMSNorm
 
     public init(_ config: Qwen25VLTextConfig) {
         self._attention.wrappedValue = QVLAttention(config)
