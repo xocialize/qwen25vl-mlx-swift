@@ -187,8 +187,8 @@ public final class Qwen25VLModel: Module {
     public let config: Qwen25VLTextConfig
 
     @ModuleInfo(key: "embed_tokens") public var embedTokens: Embedding
-    @ModuleInfo(key: "layers") var layers: [QVLDecoderLayer]
-    @ModuleInfo(key: "norm") var norm: RMSNorm
+    @ModuleInfo(key: "layers") public var layers: [QVLDecoderLayer]
+    @ModuleInfo(key: "norm") public var norm: RMSNorm
     /// Present only when the checkpoint is untied (7B+); 3B ships no lm_head keys.
     @ModuleInfo(key: "lm_head") var lmHead: Linear?
 
