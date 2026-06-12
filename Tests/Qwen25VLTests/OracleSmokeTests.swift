@@ -7,7 +7,8 @@ import XCTest
 /// Loads the bf16 snapshot and answers one oracle chart question.
 final class OracleSmokeTests: XCTestCase {
     static let weightsDir = URL(fileURLWithPath:
-        "/Volumes/DEV_VOL1/VideoResearch/qwen25vl-mlx-models/Qwen2.5-VL-3B-Instruct-bf16")
+        ProcessInfo.processInfo.environment["QVL_WEIGHTS_DIR"]
+            ?? "/Volumes/DEV_VOL1/VideoResearch/qwen25vl-mlx-models/Qwen2.5-VL-3B-Instruct-bf16")
     static let imagesDir = URL(fileURLWithPath:
         "/Volumes/DEV_ARCHIVE/lance-mlx/tests/fixtures/images")
 
