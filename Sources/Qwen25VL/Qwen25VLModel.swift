@@ -33,13 +33,13 @@ public final class QVLKVCache {
 /// 3-axis mRoPE: positionIds (3, B, T) over [temporal, height, width] with section split
 /// [16, 24, 24] of headDim/2.
 public enum MRoPE {
-    static func rotateHalf(_ x: MLXArray) -> MLXArray {
+    public static func rotateHalf(_ x: MLXArray) -> MLXArray {
         let d = x.dim(-1) / 2
         return concatenated([-x[.ellipsis, d...], x[.ellipsis, ..<d]], axis: -1)
     }
 
     /// cos/sin of shape (B, 1, T, headDim), section-interleaved across the t/h/w planes.
-    static func cosSin(
+    public static func cosSin(
         positionIds: MLXArray, headDim: Int, theta: Float, mropeSection: [Int]
     ) -> (MLXArray, MLXArray) {
         let invFreq = pow(
@@ -71,7 +71,7 @@ public enum MRoPE {
     }
 
     /// Apply to q/k of shape (B, H, T, headDim).
-    static func apply(q: MLXArray, k: MLXArray, cos: MLXArray, sin: MLXArray)
+    public static func apply(q: MLXArray, k: MLXArray, cos: MLXArray, sin: MLXArray)
         -> (MLXArray, MLXArray)
     {
         let qOut = (q * cos) + (rotateHalf(q) * sin)

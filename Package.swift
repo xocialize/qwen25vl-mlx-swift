@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 // qwen25vl-mlx-swift — Swift/MLX package serving stock Qwen2.5-VL-3B-Instruct for
 // MLXEngine's imageAnalysis/videoAnalysis. Salvaged from lance-mlx-swift's verified
 // Qwen2.5-VL components (ViT window-mask fix + decoder mRoPE list-repeat fix, both
@@ -10,10 +10,13 @@ import PackageDescription
 let package = Package(
     name: "Qwen25VL",
     platforms: [
-        .macOS(.v15)
+        // v26 to match the MLXEngine contract (MLXToolKit) the wrapper target links.
+        .macOS(.v26)
     ],
     products: [
         .library(name: "Qwen25VL", targets: ["Qwen25VL"]),
+        // The MLXEngine wrapper: a conformant `ModelPackage` over the core pipeline.
+        .library(name: "MLXQwen25VL", targets: ["MLXQwen25VL"]),
     ],
     dependencies: [
         .package(url: "https://github.com/ml-explore/mlx-swift.git", from: "0.30.0"),
@@ -22,6 +25,9 @@ let package = Package(
         // attribution (MIT) — carrying our window-mask fix. See NOTICE.
         .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", from: "3.31.3"),
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.1.6"),
+        // MLXEngine contract (MLXToolKit) for the wrapper target. Local-path dep like the
+        // other model wrappers; the core `Qwen25VL` target stays engine-agnostic.
+        .package(path: "../mlx-engine-swift"),
     ],
     targets: [
         .target(
@@ -36,6 +42,14 @@ let package = Package(
                 .product(name: "Hub", package: "swift-transformers"),
             ],
             path: "Sources/Qwen25VL"
+        ),
+        .target(
+            name: "MLXQwen25VL",
+            dependencies: [
+                "Qwen25VL",
+                .product(name: "MLXToolKit", package: "mlx-engine-swift"),
+            ],
+            path: "Sources/MLXQwen25VL"
         ),
         .testTarget(
             name: "Qwen25VLTests",
