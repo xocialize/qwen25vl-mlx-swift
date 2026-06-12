@@ -108,10 +108,10 @@ public final class QVLAttention: Module {
     let ropeTheta: Float
     let mropeSection: [Int]
 
-    @ModuleInfo(key: "q_proj") var wq: Linear
-    @ModuleInfo(key: "k_proj") var wk: Linear
-    @ModuleInfo(key: "v_proj") var wv: Linear
-    @ModuleInfo(key: "o_proj") var wo: Linear
+    @ModuleInfo(key: "q_proj") public var wq: Linear
+    @ModuleInfo(key: "k_proj") public var wk: Linear
+    @ModuleInfo(key: "v_proj") public var wv: Linear
+    @ModuleInfo(key: "o_proj") public var wo: Linear
 
     public init(_ config: Qwen25VLTextConfig) {
         let dim = config.hiddenSize
