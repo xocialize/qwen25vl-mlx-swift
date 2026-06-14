@@ -24,3 +24,10 @@ DerivedData build into `.build/debug/` first — SPM doesn't compile Metal shade
 Remaining validation (tracked): integer-artifact parity vs HF processor, CPU-stream
 op parity vs mlx-vlm, ChartQA/DocVQA N≥50 semantic eval, latency/memory table,
 video path. See `PORTING-SPEC.md`.
+
+## Consuming it
+
+This package is the **VL encoder backbone consumed by [`qwen-image-edit-swift`](https://github.com/xocialize/qwen-image-edit-swift)** — salvaged from the dropped Lance port, it now serves `imageAnalysis` / `videoAnalysis` standalone (via the `MLXQwen25VL` engine wrapper) **and** backs the Qwen-Image-Edit wrapper, so both consume one verified VL core by version.
+
+Public + version-tagged on github.com/xocialize. Add by tagged URL:
+`.package(url: "https://github.com/xocialize/qwen25vl-mlx-swift", from: "0.1.0")`, then import `Qwen25VL` for the raw pipeline, or `MLXQwen25VL` for the conformant `imageAnalysis` / `videoAnalysis` engine package.
