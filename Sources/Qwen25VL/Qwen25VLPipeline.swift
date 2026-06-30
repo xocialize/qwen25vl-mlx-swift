@@ -136,7 +136,14 @@ public enum Qwen25VLImageProcessing {
 /// dual stop ids {151645, 151643}.
 public final class Qwen25VLPipeline {
     public let model: Qwen25VLModel
-    public let vision: QVLVision.VisionModel
+    /// The resident vision tower. Held only between `load()` and the post-encode eviction in
+    /// `generate()` — per-stage load→use→evict (the encoder pattern): the ViT runs once to produce
+    /// image embeddings, then is idle through the LM decode loop, so it is dropped before decode and
+    /// lazily rebuilt by `ensureVision()` on the next call. `nil` while evicted.
+    public private(set) var vision: QVLVision.VisionModel?
+    /// Rebuilds the vision tower from the snapshot (config + weights) after an eviction. Captured at
+    /// `load()` time so the staged path needs no snapshot re-read. The closure realizes the module.
+    private let visionBuilder: () throws -> QVLVision.VisionModel
     public let tokenizer: any Tokenizers.Tokenizer
     public let spatialMergeSize: Int
     public let minPixels: Int
@@ -149,11 +156,13 @@ public final class Qwen25VLPipeline {
 
     public init(
         model: Qwen25VLModel, vision: QVLVision.VisionModel,
+        visionBuilder: @escaping () throws -> QVLVision.VisionModel,
         tokenizer: any Tokenizers.Tokenizer, spatialMergeSize: Int,
         minPixels: Int, maxPixels: Int
     ) throws {
         self.model = model
         self.vision = vision
+        self.visionBuilder = visionBuilder
         self.tokenizer = tokenizer
         self.spatialMergeSize = spatialMergeSize
         self.minPixels = minPixels
@@ -163,6 +172,23 @@ public final class Qwen25VLPipeline {
         else { throw Qwen25VLError.missingToken("vision special tokens") }
         self.imagePadId = imagePad
         self.visionStartId = visionStart
+    }
+
+    /// Bring the vision tower resident if it was evicted after a prior encode. Idempotent.
+    private func ensureVision() throws -> QVLVision.VisionModel {
+        if let vision { return vision }
+        let rebuilt = try visionBuilder()
+        vision = rebuilt
+        return rebuilt
+    }
+
+    /// Drop the vision tower after image-encode, before LM decode (per-stage eviction). The ViT
+    /// weights + its activation scratch are reclaimed so they don't sit resident through the
+    /// autoregressive loop (where the LM's prefill/KV-cache transient is the live cost). `nil` + a
+    /// GPU cache clear; the next `generate()` rebuilds via `ensureVision()`.
+    private func evictVision() {
+        vision = nil
+        Memory.clearCache()
     }
 
     /// Load everything from a published mlx-community snapshot (self-contained:
@@ -183,22 +209,34 @@ public final class Qwen25VLPipeline {
         let visionConfig = try JSONDecoder().decode(
             Qwen25VLConfiguration.VisionConfiguration.self, from: visionData)
 
-        let vision = QVLVision.VisionModel(visionConfig)
-        var vitWeights = loaded.visionWeights
-        if let q = loaded.config.quantization {
-            // Quantized repos may also quantize the ViT linears — mirror the file.
-            quantize(model: vision, groupSize: q.groupSize, bits: q.bits) { path, _ in
-                vitWeights["\(path).scales"] != nil
+        // Vision-tower builder: constructs + loads + realizes the ViT from the (already-resident,
+        // mmap-backed) checkpoint weights. Used for the initial residency AND to rebuild the tower
+        // after the per-stage post-encode eviction in `generate()`. The captured `visionWeights`
+        // are lazy MLXArrays over the mmap'd safetensors, so re-running the closure re-materializes
+        // the ViT params on demand rather than holding a second eager copy.
+        let quantization = loaded.config.quantization
+        let visionWeights = loaded.visionWeights
+        let buildVision: () throws -> QVLVision.VisionModel = {
+            let vision = QVLVision.VisionModel(visionConfig)
+            var vitWeights = visionWeights
+            if let q = quantization {
+                // Quantized repos may also quantize the ViT linears — mirror the file.
+                quantize(model: vision, groupSize: q.groupSize, bits: q.bits) { path, _ in
+                    vitWeights["\(path).scales"] != nil
+                }
             }
+            vitWeights = vision.sanitize(weights: vitWeights)
+            try vision.update(
+                parameters: ModuleParameters.unflattened(vitWeights), verify: [.noUnusedKeys])
+            eval(vision)
+            return vision
         }
-        vitWeights = vision.sanitize(weights: vitWeights)
-        try vision.update(
-            parameters: ModuleParameters.unflattened(vitWeights), verify: [.noUnusedKeys])
-        eval(vision)
+        let vision = try buildVision()
 
         let tokenizer = try await AutoTokenizer.from(pretrained: tokenizerSource)
         return try Qwen25VLPipeline(
-            model: loaded.model, vision: vision, tokenizer: tokenizer,
+            model: loaded.model, vision: vision, visionBuilder: buildVision,
+            tokenizer: tokenizer,
             spatialMergeSize: visionConfig.spatialMergeSize,
             minPixels: processor.minPixels, maxPixels: processor.maxPixels)
     }
@@ -215,11 +253,18 @@ public final class Qwen25VLPipeline {
             + "<|vision_start|><|image_pad|><|vision_end|>\(prompt)<|im_end|>\n"
             + "<|im_start|>assistant\n"
 
-        // 2. Preprocess + ViT.
+        // 2. Preprocess + ViT (per-stage: load → encode → evict). The tower runs once here, then is
+        //    dropped before the LM decode loop so its weights+scratch don't sit resident through the
+        //    autoregressive transient.
         let (patches, frame) = try Qwen25VLImageProcessing.preprocess(
             image: image, minPixels: minPixels, maxPixels: maxPixels)
+        let vision = try ensureVision()
         let visionDtype = vision.patchEmbed.proj.weight.dtype
         let imageFeatures = vision(patches.asType(visionDtype), frames: [frame])  // (N, D)
+        // Realize the encode before dropping the tower, so eviction reclaims the ViT — not a graph
+        // still pending on its weights.
+        eval(imageFeatures)
+        evictVision()
 
         // 3. Tokenize, expand the single image_pad to the per-patch count.
         var ids = tokenizer.encode(text: text, addSpecialTokens: false)

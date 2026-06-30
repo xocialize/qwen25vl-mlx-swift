@@ -28,11 +28,24 @@ public final class Qwen25VLPackage: ModelPackage {
                 tier: 1
             ),
             requirements: RequirementsManifest(
-                // 3B VLM. bf16 weights ~6 GB; measured peak working set ~9.6 GB (ViT + decoder +
-                // KV cache). int4 ~2.9 GB weights → ~4.5 GB peak.
+                // 3B VLM, split footprint (engine 1.14). MEASURED via the gated MemoryReportTests
+                // harness at the envelope: image 800x557 (~0.45 MP → ~580 vision tokens after the
+                // 28-px smart-resize factor) × maxTokens 256, after the per-stage vision-tower
+                // eviction (the ViT is dropped before the LM decode loop).
+                //   bf16: resident floor 7.51 GB, worst peak 9.98 GB → transient 2.47 GB.
+                //   int4: resident floor 3.07 GB, worst peak 4.04 GB → transient 0.97 GB.
+                // residentBytes = measured floor + a little overhead; peakActivationBytes = the
+                // measured transient + ~20% headroom (it's the LM prefill/KV-cache scratch, image-
+                // token-inflated — measured, not derived; it does NOT scale cleanly across quants,
+                // so each quant is measured separately). The transient scales with the (image-res ×
+                // maxTokens) envelope, like a resolution envelope — re-measure if it changes.
                 footprints: [
-                    QuantFootprint(quant: .bf16, residentBytes: 9_600_000_000),
-                    QuantFootprint(quant: .int4, residentBytes: 4_500_000_000),
+                    QuantFootprint(
+                        quant: .bf16, residentBytes: 7_700_000_000,
+                        peakActivationBytes: 3_000_000_000),
+                    QuantFootprint(
+                        quant: .int4, residentBytes: 3_200_000_000,
+                        peakActivationBytes: 1_200_000_000),
                 ],
                 requiredBackends: [.metalGPU],
                 os: OSRequirement(minMacOS: SemanticVersion(major: 15, minor: 0, patch: 0)),

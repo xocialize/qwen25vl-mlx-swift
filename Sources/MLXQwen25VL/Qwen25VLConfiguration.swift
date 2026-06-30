@@ -38,3 +38,8 @@ public struct Qwen25VLConfiguration: PackageConfiguration, ModelStorable {
         case repo, revision, quant
     }
 }
+
+/// Opt into per-quant footprint charging (ISSUES W1): the config already stores `quant`, so the
+/// memory governor charges the matching declared `QuantFootprint` (bf16 vs int4) instead of the
+/// largest-that-fits guess. Single-size model, so quant alone disambiguates — no `FootprintConfigured`.
+extension Qwen25VLConfiguration: QuantConfigured {}

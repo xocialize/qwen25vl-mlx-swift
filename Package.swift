@@ -27,7 +27,7 @@ let package = Package(
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.1.6"),
         // MLXEngine contract (MLXToolKit) for the wrapper target. Local-path dep like the
         // other model wrappers; the core `Qwen25VL` target stays engine-agnostic.
-        .package(url: "https://github.com/xocialize/mlx-engine-swift", from: "0.3.0"),
+        .package(url: "https://github.com/xocialize/mlx-engine-swift", from: "0.15.0"),
     ],
     targets: [
         .target(
