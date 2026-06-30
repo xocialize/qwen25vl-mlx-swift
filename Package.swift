@@ -48,6 +48,7 @@ let package = Package(
             dependencies: [
                 "Qwen25VL",
                 .product(name: "MLXToolKit", package: "mlx-engine-swift"),
+                .product(name: "MLX", package: "mlx-swift"),
             ],
             path: "Sources/MLXQwen25VL"
         ),

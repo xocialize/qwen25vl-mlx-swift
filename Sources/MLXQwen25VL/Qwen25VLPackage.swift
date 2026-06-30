@@ -1,5 +1,6 @@
 import CoreImage
 import Foundation
+import MLX
 import MLXToolKit
 import Qwen25VL
 
@@ -92,6 +93,7 @@ public final class Qwen25VLPackage: ModelPackage {
 
     public func unload() async {
         pipeline = nil
+        MLX.Memory.clearCache()   // release the retained MLX pool so eviction frees RSS (not just drop refs)
     }
 
     /// Run one `imageAnalysis` call. Decodes the canonical request, builds a `CIImage` from the
