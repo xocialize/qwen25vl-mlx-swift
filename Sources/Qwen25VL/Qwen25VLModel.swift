@@ -86,7 +86,10 @@ public final class QVLMLP: Module, UnaryLayer {
     @ModuleInfo(key: "up_proj") var up: Linear
     @ModuleInfo(key: "down_proj") var down: Linear
 
+    let hiddenDimensions: Int
+
     public init(dimensions: Int, hiddenDimensions: Int) {
+        self.hiddenDimensions = hiddenDimensions
         self._gate.wrappedValue = Linear(dimensions, hiddenDimensions, bias: false)
         self._up.wrappedValue = Linear(dimensions, hiddenDimensions, bias: false)
         self._down.wrappedValue = Linear(hiddenDimensions, dimensions, bias: false)
@@ -94,7 +97,35 @@ public final class QVLMLP: Module, UnaryLayer {
     }
 
     public func callAsFunction(_ x: MLXArray) -> MLXArray {
-        down(silu(gate(x)) * up(x))
+        downProjected(silu(gate(x)) * up(x))
+    }
+
+    /// mlx-swift 0.31.3–0.31.6 dispatches half-precision GEMMs with
+    /// M·N ≥ 2048², K ≥ 10240, K ≥ 3·max(M,N) to `steel_gemm_splitk_axpby_nax`,
+    /// which returns garbage/NaN on M5-class (NAX) GPUs (ml-explore/mlx#3797;
+    /// root-caused in qwen3vl-mlx-swift, same fix pattern). The LM down_proj
+    /// enters that window once the sequence is long enough — 3B (K=11008,
+    /// N=2048) at ≥2048 tokens, 7B (K=18944, N=3584) at ≥1171 — i.e. a
+    /// large-image grid or a long prefill. Chunk rows below the boundary:
+    /// output rows are independent, so this is mathematically exact.
+    /// The vision tower shares this class but its K (3420) never dispatches,
+    /// and quantized weights ride `quantizedMatmul` (unaffected) — both keep
+    /// the single fused call via the guards.
+    /// TODO: remove when mlx#3797 is fixed and mlx-swift ships the fix.
+    func downProjected(_ x: MLXArray) -> MLXArray {
+        let tokens = x.dim(-2)
+        let rowLimit = 896
+        guard hiddenDimensions >= 10240, x.dtype != .float32, tokens > rowLimit,
+            !(down is QuantizedLinear)
+        else { return down(x) }
+        var parts: [MLXArray] = []
+        var start = 0
+        while start < tokens {
+            let end = min(start + rowLimit, tokens)
+            parts.append(down(x[.ellipsis, start ..< end, 0...]))
+            start = end
+        }
+        return concatenated(parts, axis: -2)
     }
 }
 
