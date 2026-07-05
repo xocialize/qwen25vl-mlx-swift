@@ -52,6 +52,17 @@ let package = Package(
             ],
             path: "Sources/MLXQwen25VL"
         ),
+        // On-box NAX split-K GEMM probe at THIS package's (K,N) dims — the verification
+        // norm for the mlx#3797 row-chunk workaround (weights-free, seeded, minutes).
+        .executableTarget(
+            name: "Qwen25VLGate",
+            dependencies: [
+                "Qwen25VL",
+                .product(name: "MLX", package: "mlx-swift"),
+                .product(name: "MLXNN", package: "mlx-swift"),
+            ],
+            path: "Sources/Qwen25VLGate"
+        ),
         .testTarget(
             name: "Qwen25VLTests",
             dependencies: ["Qwen25VL"],
