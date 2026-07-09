@@ -193,8 +193,12 @@ public final class Qwen25VLPipeline {
 
     /// Load everything from a published mlx-community snapshot (self-contained:
     /// weights + config + preprocessor config + tokenizer files).
+    ///
+    /// The tokenizer loads from the snapshot's own files by default, so a materialized
+    /// snapshot is sufficient — no network, no HubApi side-cache. Pass `tokenizerSource`
+    /// to fetch a stock HF repo's tokenizer instead (dev override).
     public static func load(
-        directory: URL, tokenizerSource: String = "Qwen/Qwen2.5-VL-3B-Instruct"
+        directory: URL, tokenizerSource: String? = nil
     ) async throws -> Qwen25VLPipeline {
         let loaded = try Qwen25VLLoader.loadModel(directory: directory)
         let processor = try Qwen25VLProcessorConfig.load(from: directory)
@@ -233,7 +237,12 @@ public final class Qwen25VLPipeline {
         }
         let vision = try buildVision()
 
-        let tokenizer = try await AutoTokenizer.from(pretrained: tokenizerSource)
+        let tokenizer: any Tokenizers.Tokenizer
+        if let tokenizerSource {
+            tokenizer = try await AutoTokenizer.from(pretrained: tokenizerSource)
+        } else {
+            tokenizer = try await AutoTokenizer.from(modelFolder: directory)
+        }
         return try Qwen25VLPipeline(
             model: loaded.model, vision: vision, visionBuilder: buildVision,
             tokenizer: tokenizer,

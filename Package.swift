@@ -25,9 +25,11 @@ let package = Package(
         // attribution (MIT) — carrying our window-mask fix. See NOTICE.
         .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", from: "3.31.3"),
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.1.6"),
+        // Native downloader for `load()` auto-materialization (WeightMaterializer).
+        .package(url: "https://github.com/huggingface/swift-huggingface.git", from: "0.9.0"),
         // MLXEngine contract (MLXToolKit) for the wrapper target. Local-path dep like the
         // other model wrappers; the core `Qwen25VL` target stays engine-agnostic.
-        .package(url: "https://github.com/xocialize/mlx-engine-swift", from: "0.15.0"),
+        .package(url: "https://github.com/xocialize/mlx-engine-swift", from: "0.23.0"),
     ],
     targets: [
         .target(
@@ -49,6 +51,7 @@ let package = Package(
                 "Qwen25VL",
                 .product(name: "MLXToolKit", package: "mlx-engine-swift"),
                 .product(name: "MLX", package: "mlx-swift"),
+                .product(name: "HuggingFace", package: "swift-huggingface"),
             ],
             path: "Sources/MLXQwen25VL"
         ),
@@ -67,6 +70,16 @@ let package = Package(
             name: "Qwen25VLTests",
             dependencies: ["Qwen25VL"],
             path: "Tests/Qwen25VLTests"
+        ),
+        // Offline MAT gate (MAT-1..5) + WeightSourcing declaration tests for the wrapper.
+        .testTarget(
+            name: "MLXQwen25VLTests",
+            dependencies: [
+                "MLXQwen25VL",
+                .product(name: "MLXToolKit", package: "mlx-engine-swift"),
+                .product(name: "MLXServeConformance", package: "mlx-engine-swift"),
+            ],
+            path: "Tests/MLXQwen25VLTests"
         ),
     ]
 )

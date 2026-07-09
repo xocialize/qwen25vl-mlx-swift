@@ -1,5 +1,5 @@
 {
-  "originHash" : "2abdfdf005ba74f12d0771c43bfb19b54b0f57a88d9c2f87cb49b16ed72e36d3",
+  "originHash" : "505a8366e4b5b70e61013ee15d7fe61749d27d7f855cefeddc9e9b11199cbda3",
   "pins" : [
     {
       "identity" : "eventsource",
@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/xocialize/mlx-engine-swift",
       "state" : {
-        "revision" : "a660673c4f197665f05f522ebed21a432a9f14b7",
-        "version" : "0.15.0"
+        "revision" : "86b53ba35961ced25a5190f6e371c6f435597ef0",
+        "version" : "0.23.0"
       }
     },
     {
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/ml-explore/mlx-swift.git",
       "state" : {
-        "revision" : "dc43e62d7055353c7f99fa071a4e71d29dfddc44",
-        "version" : "0.31.4"
+        "revision" : "0bb916c67f4b9e5c682cbe02a42c701c93ab5021",
+        "version" : "0.31.6"
       }
     },
     {
@@ -35,6 +35,15 @@
       "state" : {
         "revision" : "1c05248bb0899e2a7a4962b84d319cf12f4e12aa",
         "version" : "3.31.3"
+      }
+    },
+    {
+      "identity" : "swift-argument-parser",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-argument-parser",
+      "state" : {
+        "revision" : "6a52f3251125d74daf04fcbd5e6f08a75d074382",
+        "version" : "1.8.2"
       }
     },
     {

@@ -76,17 +76,29 @@ public final class Qwen25VLPackage: ModelPackage {
 
     /// Page the snapshot in. Idempotent when already resident.
     ///
-    /// V1 loads from the resolved local snapshot directory. The engine-driven HF auto-download into
-    /// `modelsRootDirectory` is the next additive step; until then a missing `snapshotDirectory` is a
-    /// configuration error (the published `mlx-community/Qwen2.5-VL-3B-Instruct-*` snapshot is
-    /// self-contained: weights + config + preprocessor config).
+    /// Dir-less configurations auto-materialize the declared `weightSources` into the
+    /// engine-stamped models root (ModelStore layout) with per-file progress forwarded via
+    /// `WeightDownloadProgress`, then load from the store-resolved directory. An explicit
+    /// `snapshotDirectory` is the dev escape hatch and never touches the network (the published
+    /// `mlx-community/Qwen2.5-VL-3B-Instruct-*` snapshot is self-contained: weights + config +
+    /// preprocessor config + tokenizer files).
     public func load() async throws {
         guard pipeline == nil else { return }
-        guard let directory = configuration.snapshotDirectory else {
+        let storeRoot = configuration.modelsRootDirectory
+        let missing = configuration.missingWeightSources(storeRoot: storeRoot)
+        if !missing.isEmpty {
+            guard let storeRoot else {
+                throw PackageError.configurationMismatch(
+                    expected: "a local Qwen2.5-VL snapshot directory (snapshotDirectory) or an engine models root (modelsRootDirectory)",
+                    got: "nil — sources missing: \(missing.map(\.role).joined(separator: ", "))"
+                )
+            }
+            try await WeightMaterializer.materialize(missing, into: storeRoot)
+        }
+        try Task.checkCancellation()
+        guard let directory = configuration.resolved(storeRoot: storeRoot).snapshotDirectory else {
             throw PackageError.configurationMismatch(
-                expected: "a local Qwen2.5-VL snapshot directory (snapshotDirectory)",
-                got: "nil — HF auto-download into modelsRootDirectory is not yet wired"
-            )
+                expected: "a resolved snapshot directory", got: "nil (no store root)")
         }
         pipeline = try await Qwen25VLPipeline.load(directory: directory)
     }
