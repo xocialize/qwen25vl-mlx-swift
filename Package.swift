@@ -27,9 +27,10 @@ let package = Package(
         .package(url: "https://github.com/huggingface/swift-transformers", from: "1.1.6"),
         // Native downloader for `load()` auto-materialization (WeightMaterializer).
         .package(url: "https://github.com/huggingface/swift-huggingface.git", from: "0.9.0"),
-        // MLXEngine contract (MLXToolKit) for the wrapper target. Local-path dep like the
-        // other model wrappers; the core `Qwen25VL` target stays engine-agnostic.
-        .package(url: "https://github.com/xocialize/mlx-engine-swift", from: "0.23.0"),
+        // MLXEngine contract (MLXToolKit) for the wrapper target; the core `Qwen25VL`
+        // target stays engine-agnostic. ≥0.27.0: run-lifecycle V4 — the CAN
+        // cancellation-conformance gate (MLXServeConformance CAN-1..3).
+        .package(url: "https://github.com/xocialize/mlx-engine-swift", from: "0.27.0"),
     ],
     targets: [
         .target(

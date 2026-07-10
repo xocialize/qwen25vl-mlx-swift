@@ -109,17 +109,20 @@ public final class Qwen25VLPackage: ModelPackage {
     }
 
     /// Run one `imageAnalysis` call. Decodes the canonical request, builds a `CIImage` from the
-    /// artifact bytes, generates, and returns canonical text. Honors cancellation at the call
-    /// boundary (the greedy decode loop is a single synchronous call — per-token cancellation is a
-    /// future core enhancement, mirrored across the VLM packages).
+    /// artifact bytes, generates, and returns canonical text. Honors cancellation cooperatively:
+    /// entry checkpoint here, then the pipeline's decode loop checks per generated token (plus a
+    /// post-encode/pre-decode stage checkpoint) — `generate` runs synchronously on this run's
+    /// task, so the flag is visible and the `CancellationError` rethrows unchanged.
     public func run(_ request: any CapabilityRequest) async throws -> any CapabilityResponse {
+        // CAN-1: the entry checkpoint is the FIRST act of run() — before notLoaded validation
+        // (engine ≥ 0.27.0).
+        try Task.checkCancellation()
         guard let pipeline else { throw PackageError.notLoaded }
         guard request.capability == .imageAnalysis,
               let analysis = request as? ImageAnalysisRequest
         else {
             throw PackageError.unsupportedCapability(request.capability)
         }
-        try Task.checkCancellation()
 
         guard let image = CIImage(data: analysis.image.data) else {
             throw Qwen25VLPackageError.imageDecodeFailed

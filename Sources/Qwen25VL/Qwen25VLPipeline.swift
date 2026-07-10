@@ -274,6 +274,10 @@ public final class Qwen25VLPipeline {
         // still pending on its weights.
         eval(imageFeatures)
         evictVision()
+        // Cooperative cancellation (CAN): stage seam between vision-encode and LM decode. The
+        // caller runs `generate` synchronously on its own task, so the flag is visible here and
+        // the CancellationError propagates unchanged through the throwing signature.
+        try Task.checkCancellation()
 
         // 3. Tokenize, expand the single image_pad to the per-patch count.
         var ids = tokenizer.encode(text: text, addSpecialTokens: false)
@@ -308,6 +312,9 @@ public final class Qwen25VLPipeline {
         var output: [Int] = []
         var position = nextPosition
         for _ in 0..<maxNewTokens {
+            // Cooperative cancellation (CAN): once per generated token, so a preempting
+            // governor (or a user cancel) bails out of the autoregressive loop promptly.
+            try Task.checkCancellation()
             let logits = model.logits(hidden[0..., -1, 0...])
             let next = argMax(logits, axis: -1).item(Int.self)
             if next == Qwen25VLTokens.imEnd || next == Qwen25VLTokens.endOfText { break }
