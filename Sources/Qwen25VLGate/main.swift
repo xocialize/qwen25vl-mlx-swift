@@ -1,5 +1,5 @@
-// Qwen25VLGate — on-box probe for the mlx-swift 0.31.3–0.31.6 NAX split-K GEMM bug
-// (ml-explore/mlx#3797) at THIS package's own (K,N) dims, per the fleet verification
+// Qwen25VLGate — on-box regression gate for the NAX split-K GEMM bug (ml-explore/mlx#3797,
+// fixed in mlx-swift 0.32.3 via mlx#3810) at THIS package's own (K,N) dims, per the fleet verification
 // norm: exposure is measured on-box, never inferred from config dims alone.
 //
 //   swift run Qwen25VLGate --matmul-probe-rand
@@ -8,9 +8,9 @@
 //   raw     — plain bf16 matmul vs fp32 reference across the M dispatch boundary.
 //             Informational: documents whether THIS box/mlx-swift build is exposed
 //             (in-window rows go garbage on affected NAX builds).
-//   chunked — the real `QVLMLP` forward (bf16, row-chunked down_proj) vs an fp32
-//             reference of the same SwiGLU math. This is the GATE: cos ≥ 0.999 at
-//             every M or exit 1.
+//   mlp     — the real `QVLMLP` forward (bf16, single fused down_proj since the
+//             row-chunk was removed) vs an fp32 reference of the same SwiGLU math.
+//             This is the GATE: cos ≥ 0.999 at every M or exit 1.
 //
 // Weights-free: seeded host-side LCG randoms, no MLXRandom, no snapshot required.
 
@@ -77,8 +77,8 @@ for tier in tiers {
         err("  M=\(m) cos \(cosine(y, yRef)) max_abs_vs_fp32 \(mab)")
     }
 
-    // The real QVLMLP (row-chunked down_proj) vs fp32 SwiGLU reference — the gate.
-    err("[\(tier.label)] chunked QVLMLP(dim \(n), ffn \(k)) bf16 vs fp32 reference:")
+    // The real QVLMLP (single fused down_proj) vs fp32 SwiGLU reference — the gate.
+    err("[\(tier.label)] QVLMLP(dim \(n), ffn \(k)) bf16 vs fp32 reference:")
     let mlp = QVLMLP(dimensions: n, hiddenDimensions: k)
     let gw = MLXArray(lcg.randArray(k * n), [k, n]) * 0.02
     let uw = MLXArray(lcg.randArray(k * n), [k, n]) * 0.02
@@ -103,5 +103,5 @@ for tier in tiers {
     }
 }
 
-err(pass ? "[gate] PASS — chunked down_proj clean at all probed M" : "[gate] FAIL")
+err(pass ? "[gate] PASS — down_proj clean at all probed M" : "[gate] FAIL")
 exit(pass ? 0 : 1)

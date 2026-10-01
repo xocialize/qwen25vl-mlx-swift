@@ -19,7 +19,9 @@ let package = Package(
         .library(name: "MLXQwen25VL", targets: ["MLXQwen25VL"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/ml-explore/mlx-swift.git", from: "0.30.0"),
+        // 0.32.3 carries the NAX split-K GEMM fix (mlx#3810); QVLMLP's row-chunk workaround is gone,
+        // so earlier versions would corrupt half-precision down_proj on long sequences on M5.
+        .package(url: "https://github.com/ml-explore/mlx-swift.git", from: "0.32.3"),
         // Public Qwen2.5-VL utilities (configuration types, THW). The fileprivate
         // vision blocks are copy-adapted into Sources/Qwen25VL/Adapted/ with
         // attribution (MIT) — carrying our window-mask fix. See NOTICE.
