@@ -77,8 +77,9 @@ public final class Qwen25VLPackage: ModelPackage {
     /// Page the snapshot in. Idempotent when already resident.
     ///
     /// Dir-less configurations auto-materialize the declared `weightSources` into the
-    /// engine-stamped models root (ModelStore layout) with per-file progress forwarded via
-    /// `WeightDownloadProgress`, then load from the store-resolved directory. An explicit
+    /// engine-stamped models root (ModelStore layout, `<root>/models--<org>--<name>`, MS-1) with
+    /// per-file progress forwarded via `WeightDownloadProgress`, then load from the store-resolved
+    /// directory (hub snapshot first, else the flat repo dir). An explicit
     /// `snapshotDirectory` is the dev escape hatch and never touches the network (the published
     /// `mlx-community/Qwen2.5-VL-3B-Instruct-*` snapshot is self-contained: weights + config +
     /// preprocessor config + tokenizer files).
@@ -96,7 +97,8 @@ public final class Qwen25VLPackage: ModelPackage {
             try await WeightMaterializer.materialize(missing, into: storeRoot)
         }
         try Task.checkCancellation()
-        guard let directory = configuration.resolved(storeRoot: storeRoot).snapshotDirectory else {
+        // Resolve snapshot-first (hub layout), else the flat repo dir (MS-1).
+        guard let directory = configuration.resolvedModelDirectory(storeRoot: storeRoot) else {
             throw PackageError.configurationMismatch(
                 expected: "a resolved snapshot directory", got: "nil (no store root)")
         }

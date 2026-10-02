@@ -1,7 +1,8 @@
 // WeightMaterializer.swift — first-run download of the package's declared weight sources
 // (the auto-materialization contract: the PACKAGE materializes; the app only picks the
 // models folder). Same shape as MLXLTX2's reference implementation: each missing source's
-// repo is snapshot-downloaded into the engine ModelStore layout (`<root>/<org>/<name>/…`)
+// repo is snapshot-downloaded into the engine ModelStore's flat layout
+// (`<root>/models--<org>--<name>/…`, MS-1 / contract 1.24)
 // via swift-huggingface's HubClient, with per-file progress forwarded to
 // `WeightDownloadProgress` so the engine's PreparationMonitor surfaces `.downloading`.
 

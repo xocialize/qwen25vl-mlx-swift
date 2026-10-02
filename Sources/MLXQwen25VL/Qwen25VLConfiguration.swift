@@ -8,7 +8,8 @@ import MLXToolKit
 /// as published — weights + config + preprocessor config + tokenizer files). `snapshotDirectory`
 /// is the explicit-directory escape hatch (dev mode — never touches the network); when it is nil,
 /// `load()` auto-materializes the declared `weightSources` into the engine-stamped
-/// `modelsRootDirectory` (ModelStore layout, `<root>/<org>/<name>`) and loads from there.
+/// `modelsRootDirectory` (ModelStore layout, `<root>/models--<org>--<name>`, MS-1) and loads from
+/// there — the hub snapshot (`snapshots/<commit>/`) when one exists, else the flat repo dir.
 public struct Qwen25VLConfiguration: PackageConfiguration, ModelStorable {
     /// Snapshot repo id — also the provenance repo. Defaults per quant tier via
     /// `defaultRepo(for:)`; pass explicitly to pin a different published snapshot.
@@ -73,15 +74,20 @@ extension Qwen25VLConfiguration: WeightSourcing {
         [WeightSource(role: "main", repo: repo, revision: revision)]
     }
 
+    /// Explicit `snapshotDirectory` first (dev escape hatch), then the engine's MS-2 default probe
+    /// against the canonical store — which accepts BOTH the hub-client snapshot layout
+    /// (`models--<org>--<name>/snapshots/<commit>/…` behind `refs/`) and the engine-executed flat
+    /// layout (contract 1.24, files directly under the repo dir). The default probe is satisfied
+    /// by a lone `config.json`, so the directory `load()` will actually read must ALSO pass this
+    /// package's stricter `snapshotPresent` check — probe what you load. Nil store + no explicit
+    /// directory ⇒ everything missing (the honest fresh-machine answer, MAT-4).
     public func missingWeightSources(storeRoot: URL?) -> [WeightSource] {
-        // Explicit local directory first (dev escape hatch).
         if let dir = snapshotDirectory, Self.snapshotPresent(at: dir) { return [] }
-        // Then the ModelStore layout (`<root>/<org>/<name>`).
-        if let dir = ModelStore(root: storeRoot).directory(for: repo),
-           Self.snapshotPresent(at: dir) {
-            return []
-        }
-        return weightSources
+        guard defaultMissingWeightSources(storeRoot: storeRoot).isEmpty,
+              let dir = resolvedModelDirectory(storeRoot: storeRoot),
+              Self.snapshotPresent(at: dir)
+        else { return weightSources }
+        return []
     }
 
     /// All probe files present + at least one weights shard (the materializer creates the
@@ -94,13 +100,23 @@ extension Qwen25VLConfiguration: WeightSourcing {
         return contents.contains { $0.hasSuffix(".safetensors") }
     }
 
-    /// The configuration with a nil `snapshotDirectory` resolved to the store layout — what
-    /// `load()` uses AFTER materialization. An explicit directory always wins.
+    /// Where `load()` reads the snapshot from: an explicit `snapshotDirectory` always wins; a nil
+    /// directory resolves against the store — the materialized hub snapshot when one exists
+    /// (`snapshots/<commit>/` behind `refs/`), else the flat repo directory (the engine-executed
+    /// materialization destination, and this package's own defensive-download target).
+    public func resolvedModelDirectory(storeRoot: URL?) -> URL? {
+        if let snapshotDirectory { return snapshotDirectory }
+        let store = ModelStore(root: storeRoot)
+        if let snapshot = store.snapshotDirectory(for: repo, revision: revision) {
+            return snapshot
+        }
+        return store.directory(for: repo)
+    }
+
+    /// The configuration with a nil `snapshotDirectory` resolved via `resolvedModelDirectory`.
     public func resolved(storeRoot: URL?) -> Qwen25VLConfiguration {
         var cfg = self
-        if cfg.snapshotDirectory == nil {
-            cfg.snapshotDirectory = ModelStore(root: storeRoot).directory(for: repo)
-        }
+        cfg.snapshotDirectory = resolvedModelDirectory(storeRoot: storeRoot)
         return cfg
     }
 }
@@ -113,7 +129,7 @@ extension Qwen25VLConfiguration: WeightPrewarming {
         // directory is scanned recursively for the weight shards; the index file rides along as
         // a completeness probe so `needsDownload` doesn't read a half-materialized directory as
         // present.
-        guard let dir = resolved(storeRoot: modelsRootDirectory).snapshotDirectory else { return [] }
+        guard let dir = resolvedModelDirectory(storeRoot: modelsRootDirectory) else { return [] }
         return [dir.appending(path: "model.safetensors.index.json"), dir]
     }
 }

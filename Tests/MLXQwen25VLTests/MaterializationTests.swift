@@ -55,34 +55,85 @@ final class MaterializationTests: XCTestCase {
 
     // MARK: - Store-layout probe + resolution
 
-    func testStoreLayoutSatisfiesAndResolves() throws {
-        let root = FileManager.default.temporaryDirectory
-            .appending(path: "qwen25vl-store-\(UUID().uuidString)")
+    /// Write the full probe set + one weights shard into `dir`.
+    private func populate(_ dir: URL) throws {
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        for file in Qwen25VLConfiguration.probeFiles + ["model-00001-of-00002.safetensors"] {
+            FileManager.default.createFile(
+                atPath: dir.appending(path: file).path, contents: Data([0]))
+        }
+    }
+
+    private func tempStoreRoot() -> URL {
+        FileManager.default.temporaryDirectory.appending(path: "qwen25vl-store-\(UUID().uuidString)")
+    }
+
+    func testFlatStoreLayoutSatisfiesAndResolves() throws {
+        // The engine-executed FLAT layout (contract 1.24): files directly under
+        // `<root>/models--<org>--<name>/` — where MLXServeEngine's materializer (and this
+        // package's defensive WeightMaterializer) land them.
+        let root = tempStoreRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let cfg = Qwen25VLConfiguration()
         // Empty store: the source is missing.
         XCTAssertEqual(cfg.missingWeightSources(storeRoot: root).count, 1)
         // A bare directory (materializer creates it before the download completes) is NOT enough.
-        let dir = root.appending(path: cfg.repo)
+        let dir = root.appending(path: "models--mlx-community--Qwen2.5-VL-3B-Instruct-bf16")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         XCTAssertEqual(cfg.missingWeightSources(storeRoot: root).count, 1)
+        // config.json alone satisfies the engine's default probe but NOT this package's.
+        FileManager.default.createFile(
+            atPath: dir.appending(path: "config.json").path, contents: Data([0]))
+        XCTAssertEqual(cfg.missingWeightSources(storeRoot: root).count, 1)
         // The full probe set + a weights shard satisfies.
-        for file in Qwen25VLConfiguration.probeFiles + ["model-00001-of-00002.safetensors"] {
-            FileManager.default.createFile(
-                atPath: dir.appending(path: file).path, contents: Data([0]))
-        }
+        try populate(dir)
         XCTAssertTrue(cfg.missingWeightSources(storeRoot: root).isEmpty)
-        // Resolution lands on the store layout; an explicit dir always wins.
+        // No hub snapshot exists → resolution lands on the flat repo dir; an explicit dir wins.
+        XCTAssertEqual(cfg.resolvedModelDirectory(storeRoot: root)?.path, dir.path)
         XCTAssertEqual(cfg.resolved(storeRoot: root).snapshotDirectory?.path, dir.path)
         let explicit = Qwen25VLConfiguration(snapshotDirectory: URL(fileURLWithPath: "/x"))
-            .resolved(storeRoot: root)
-        XCTAssertEqual(explicit.snapshotDirectory?.path, "/x")
+        XCTAssertEqual(explicit.resolvedModelDirectory(storeRoot: root)?.path, "/x")
+        // The sibling quant tier is a DIFFERENT repo dir — still missing.
+        XCTAssertEqual(
+            Qwen25VLConfiguration(quant: .int4).missingWeightSources(storeRoot: root).count, 1)
+    }
+
+    func testHubSnapshotLayoutSatisfiesAndResolvesSnapshotFirst() throws {
+        // The hub-client layout (MS-1): `models--<org>--<name>/snapshots/<commit>/…` behind
+        // `refs/main`. The probe accepts it, and resolution prefers the snapshot dir.
+        let root = tempStoreRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repoDir = root.appending(path: "models--mlx-community--Qwen2.5-VL-3B-Instruct-bf16")
+        let snapshot = repoDir.appending(path: "snapshots/abc123")
+        try FileManager.default.createDirectory(at: snapshot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: repoDir.appending(path: "refs"), withIntermediateDirectories: true)
+        try Data("abc123".utf8).write(to: repoDir.appending(path: "refs/main"))
+        let cfg = Qwen25VLConfiguration()
+        // A half-landed snapshot (config.json only) is not a materialized model.
+        FileManager.default.createFile(
+            atPath: snapshot.appending(path: "config.json").path, contents: Data([0]))
+        XCTAssertEqual(cfg.missingWeightSources(storeRoot: root).count, 1)
+        try populate(snapshot)
+        XCTAssertTrue(cfg.missingWeightSources(storeRoot: root).isEmpty)
+        XCTAssertEqual(cfg.resolvedModelDirectory(storeRoot: root)?.path, snapshot.path)
+    }
+
+    func testLegacyNestedLayoutReadsAsMissing() throws {
+        // The pre-MS-1 `<root>/<org>/<name>` form survives only as a MARKER-read tolerance —
+        // weights there were never where the hub client lands them, so it must not satisfy.
+        let root = tempStoreRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try populate(root.appending(path: "mlx-community/Qwen2.5-VL-3B-Instruct-bf16"))
+        XCTAssertEqual(Qwen25VLConfiguration().missingWeightSources(storeRoot: root).count, 1)
     }
 
     func testPrewarmPathsUseResolvedStoreLayout() {
         let root = URL(fileURLWithPath: "/tmp/some-store")
         let cfg = Qwen25VLConfiguration(modelsRootDirectory: root)
-        let expected = root.appending(path: "mlx-community/Qwen2.5-VL-3B-Instruct-bf16")
+        // Nothing materialized at this root → no snapshot to prefer → the flat repo dir
+        // (MS-1 `models--<org>--<name>`).
+        let expected = root.appending(path: "models--mlx-community--Qwen2.5-VL-3B-Instruct-bf16")
         XCTAssertEqual(
             cfg.prewarmPaths.map(\.path),
             [expected.appending(path: "model.safetensors.index.json").path, expected.path])
