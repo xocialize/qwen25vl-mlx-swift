@@ -14,6 +14,7 @@ import XCTest
 /// compared fp32-vs-fp32 on the CPU stream (GPU fp32 matmul carries ~8e-4 rel
 /// accumulation noise on M-series and must not be used for op parity).
 final class ParityTests: XCTestCase {
+    override func invokeTest() { withMLXCPU { super.invokeTest() } }
     static let parityDir = URL(fileURLWithPath:
         "/Volumes/DEV_VOL1/VideoResearch/qwen25vl-mlx-models/parity")
     static let question = "What percentage of respondents want better border security?"
@@ -22,8 +23,6 @@ final class ParityTests: XCTestCase {
         try XCTSkipUnless(
             ProcessInfo.processInfo.environment["QVL_PARITY_TESTS"] == "1",
             "set QVL_PARITY_TESTS=1 (and dump the reference) to run")
-
-        Device.setDefault(device: Device.cpu)
 
         let ref = try MLX.loadArrays(
             url: Self.parityDir.appendingPathComponent("case02.safetensors"))
