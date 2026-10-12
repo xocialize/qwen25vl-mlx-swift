@@ -4,6 +4,7 @@
 
 import Foundation
 import MLX
+import MLXExactConv
 import MLXNN
 
 public class QVLVisionRotaryEmbedding {
@@ -63,7 +64,14 @@ public class QVLPatchEmbed: Module, UnaryLayer {
             -1, inChannels, temporalPatchSize, patchSize, patchSize
         ).movedAxis(source: 1, destination: 4)
 
-        hiddenStates = proj(hiddenStates)
+        // Through ExactConv, not `proj(_:)`: a 3-channel conv3d is what mlx 0.32.2's
+        // `pad_and_slice_conv_3D_gpu` serves, and that helper frees its zero fill value while the GPU
+        // still reads it — under a capped buffer cache (the Image Engine's 2 GiB) the process dies
+        // with "Invalid Resource" (AB-T-0214). ExactConv pads the channels to 16 in the graph and
+        // runs the same implicit GEMM; `proj` keeps the weight and its key.
+        hiddenStates = ExactConv.conv3d(
+            hiddenStates, weight: proj.weight, bias: proj.bias,
+            stride: (temporalPatchSize, patchSize, patchSize))
         hiddenStates = hiddenStates.reshaped(-1, outputDimensions)
         return hiddenStates
     }
