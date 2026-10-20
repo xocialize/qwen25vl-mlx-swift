@@ -10,4 +10,6 @@ vision tower and language-block reference implementations, which are fileprivate
 
 Lance model weights: Apache-2.0 (ByteDance Intelligent Creation Lab), published at
 mlx-community/Lance-3B-bf16 and siblings. Wan2.2 VAE: Apache-2.0 (Alibaba).
-Qwen2.5-VL: Apache-2.0 (Alibaba). This repository contains no model weights.
+Qwen2.5-VL: the 7B and 32B weights are Apache-2.0 (Alibaba); the 3B weights, which the MLXQwen25VL
+package loads, are under the Qwen RESEARCH License Agreement (non-commercial; Alibaba Cloud).
+This repository contains no model weights.

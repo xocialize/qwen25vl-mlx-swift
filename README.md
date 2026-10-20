@@ -1,6 +1,22 @@
 # qwen25vl-mlx-swift
 
-Swift/MLX package serving **Qwen2.5-VL-3B-Instruct** (Apache-2.0) for MLXEngine's
+> **Licence: the Qwen2.5-VL-3B-Instruct weights are under the Qwen RESEARCH License Agreement —
+> research / evaluation only, no commercial use** (§1(i), §2(a); commercial use needs a separate
+> licence from Alibaba Cloud, §2(b)). Upstream's model card says `license_name: qwen-research`, and
+> so do the `mlx-community/Qwen2.5-VL-3B-Instruct-{bf16,4bit}` conversions. The family is split by
+> size: the 7B and 32B are Apache-2.0, the 72B is under the Qwen licence, and the 3B is research-only.
+> The Swift port code in this repository is Apache-2.0 (`LICENSE`); that doesn't change the weights'
+> terms.
+>
+> Since 0.5.0, `MLXQwen25VL` declares `weightLicense = LicenseRef-Qwen-Research`, which is never on a
+> permissive allowlist. A `.permissiveOnly` + `.blocking` engine refuses the package; an `.advisory`
+> engine registers it with a licence advisory. Don't route to it by default (AB-A-0142, AB-D-0085).
+> Before 0.5.0 it was declared Apache-2.0 by mistake.
+>
+> The `Qwen25VL` core carries no weights. `qwen-image-edit-swift` uses it with Qwen-Image's
+> Qwen2.5-VL-7B text encoder, which is Apache-2.0.
+
+Swift/MLX package serving **Qwen2.5-VL-3B-Instruct** (Qwen Research licence) for MLXEngine's
 `imageAnalysis` / `videoAnalysis` capabilities — VQA, captioning, OCR/document reads,
 grounding. Salvaged from the verified `lance-mlx-swift` Qwen2.5-VL components
 (ViT window-mask fix + decoder mRoPE list-repeat fix, both absent upstream in

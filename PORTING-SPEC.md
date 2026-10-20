@@ -33,7 +33,8 @@ extraction/editing, `swift build` of this package alone (CPU, small), weight dow
 ## Weights & key layout
 
 - Runtime: `mlx-community/Qwen2.5-VL-3B-Instruct-4bit`. Parity reference:
-  `mlx-community/Qwen2.5-VL-3B-Instruct-bf16`. Both Apache-2.0. **DOWNLOADED
+  `mlx-community/Qwen2.5-VL-3B-Instruct-bf16`. Both under the Qwen RESEARCH licence, non-commercial
+  (corrected 2026-10-19, AB-A-0142; this said Apache-2.0, which is the 7B's licence). **DOWNLOADED
   (2026-06-11)** to `/Volumes/DEV_VOL1/VideoResearch/qwen25vl-mlx-models/`
   (4bit 2.9 GB / bf16 7.0 GB).
 - **Key layout VERIFIED from the safetensors headers:** `language_model.model.*` +

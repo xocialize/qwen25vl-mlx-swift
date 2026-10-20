@@ -4,6 +4,16 @@ import MLX
 import MLXToolKit
 import Qwen25VL
 
+extension SPDXLicense {
+    /// Qwen RESEARCH LICENSE AGREEMENT (release 2024-09-19), the licence of Qwen/Qwen2.5-VL-3B-Instruct and of the
+    /// mlx-community conversions this package loads (`license_name: qwen-research`, checked on the Hub 2026-10-19):
+    /// §1(i) non-commercial means research or evaluation only, and §2(b) commercial use needs a separate licence from
+    /// Alibaba Cloud. Non-SPDX, `LicenseRef-` convention, and deliberately absent from `permissiveAllowlist` (AB-D-0085,
+    /// AB-A-0142). Internal, so a host that also links qwen-image21-swift (which declares the same id publicly) never
+    /// sees two `SPDXLicense.qwenResearch` members.
+    static let qwenResearch: SPDXLicense = "LicenseRef-Qwen-Research"
+}
+
 /// MLXEngine package: stock Qwen2.5-VL-3B-Instruct exposing the canonical `imageAnalysis` surface
 /// (VLM "look at this image and answer"). Returns canonical structured text.
 ///
@@ -21,8 +31,10 @@ public final class Qwen25VLPackage: ModelPackage {
 
     public nonisolated static var manifest: PackageManifest {
         PackageManifest(
-            // Qwen2.5-VL weights are Apache-2.0; this port code is Apache-2.0 too.
-            license: LicenseDeclaration(weightLicense: .apache2, portCodeLicense: .apache2),
+            // The 3B weights are under the Qwen RESEARCH licence (non-commercial), unlike the Apache-2.0 7B and 32B;
+            // never allowlisted, so `.permissiveOnly` refuses (`.blocking`) or flags (`.advisory`) this package
+            // (AB-A-0142). This port code is Apache-2.0.
+            license: LicenseDeclaration(weightLicense: .qwenResearch, portCodeLicense: .apache2),
             provenance: Provenance(
                 sourceRepo: "mlx-community/Qwen2.5-VL-3B-Instruct-bf16",
                 revision: "main",
