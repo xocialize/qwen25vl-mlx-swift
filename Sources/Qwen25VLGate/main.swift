@@ -3,6 +3,7 @@
 // norm: exposure is measured on-box, never inferred from config dims alone.
 //
 //   swift run Qwen25VLGate --matmul-probe-rand
+//   swift run -c release Qwen25VLGate --patch-embed-probe   (AB-T-0466, see that section)
 //
 // Two sections per model tier (3B: K=11008,N=2048 · 7B: K=18944,N=3584):
 //   raw     — plain bf16 matmul vs fp32 reference across the M dispatch boundary.
@@ -16,7 +17,9 @@
 
 import Foundation
 import MLX
+import MLXExactConv
 import MLXNN
+import MLXRandom
 import Qwen25VL
 
 func err(_ s: String) { FileHandle.standardError.write((s + "\n").data(using: .utf8)!) }
@@ -47,9 +50,79 @@ var lcg = LCG()
 
 
 let gate = CommandLine.arguments.dropFirst().first ?? "--matmul-probe-rand"
-guard gate == "--matmul-probe-rand" else {
-    err("usage: Qwen25VLGate --matmul-probe-rand")
+guard gate == "--matmul-probe-rand" || gate == "--patch-embed-probe" else {
+    err("usage: Qwen25VLGate --matmul-probe-rand | --patch-embed-probe")
     exit(2)
+}
+
+// AB-T-0466: `QVLPatchEmbed` is a matmul, not a conv. mlx 0.32.x's `pad_gpu` loses values past 2^31
+// destination elements (ml-explore/mlx#4735), so the old conv route (3 channels padded to 16) garbled
+// every patch row past some count. Weights-free (no 3B snapshot needed), real 3B shape: patch 14,
+// temporal 2, 3 channels, 1280 out, bf16, no bias.
+//   (1) matmul vs the old ExactConv route vs an fp32 reference, up to and past 262,144 patches;
+//   (2) a multi-image batch over 262,144 patches: the last image's embeddings must match it alone.
+// Only the patch embed is exercised at that size: `QVLVisionModel` builds a dense (S, S) attention
+// mask (~73 GB at 270K patches), and the pipeline encodes one pixel-capped image per call.
+if gate == "--patch-embed-probe" {
+    let (o, kt, p, c) = (1280, 2, 14, 3)
+    let rowLen = c * kt * p * p
+    let cut = 262_144
+    let embed = QVLPatchEmbed(patchSize: p, temporalPatchSize: kt, inChannels: c, outputDimensions: o)
+    let w = (MLXRandom.normal([o, kt, p, p, c], key: MLXRandom.key(3)) * 0.02).asType(.bfloat16)
+    try! embed.update(parameters: ModuleParameters.unflattened([("proj.weight", w)]), verify: .none)
+    var ok = true
+
+    // The conv's input padded to 16 channels is 2·14·14·16 = 6,272 elements per patch, so 2^31 is crossed
+    // at patch 342,393 for this shape (Qwen3-VL's 2·16·16·16 crosses at 262,145).
+    for n in [4096, cut + 1, 342_392, 342_393, 350_000] {
+        let x = MLXRandom.uniform(low: -1, high: 1, [n, rowLen], key: MLXRandom.key(0)).asType(.bfloat16)
+        let patches = x.reshaped(n, c, kt, p, p).movedAxis(source: 1, destination: 4)
+        let new = embed(x).asType(.float32)
+        let ref = matmul(patches.reshaped(n, -1).asType(.float32), w.reshaped(o, -1).asType(.float32).T)
+        let old = ExactConv.conv3d(patches, weight: w, stride: (kt, p, p)).reshaped(n, o).asType(.float32)
+        eval(new, ref, old)
+        let rowNewOld = abs(new - old).max(axis: 1)
+        let rowNewRef = abs(new - ref).max(axis: 1)
+        let rowOldRef = abs(old - ref).max(axis: 1)
+        func span(_ r: MLXArray, _ lo: Int, _ hi: Int) -> String {
+            hi > lo ? String(format: "%.5g", r[lo ..< hi].max().item(Float.self)) : "-"
+        }
+        let h = min(n, cut)
+        let refMax = abs(ref).max().item(Float.self)
+        let newErr = rowNewRef.max().item(Float.self)
+        // First row where the old route is off by more than 100× the first 4096 rows' worst.
+        let bad = rowOldRef .> (rowOldRef[0 ..< 4096].max() * 100 + 1e-3)
+        let firstBad = bad.any().item(Bool.self) ? argMax(bad.asType(.int32)).item(Int.self) : -1
+        let pass = newErr <= refMax / 64  // bf16 output rounding is ≤ 2^-8 relative
+        ok = ok && pass
+        err("(1) N=\(n)  |new-old| rows<2^18 \(span(rowNewOld, 0, h)) rows≥2^18 \(span(rowNewOld, h, n))"
+            + "  |new-ref| \(span(rowNewRef, 0, h))/\(span(rowNewRef, h, n))"
+            + "  |old-ref| \(span(rowOldRef, 0, h))/\(span(rowOldRef, h, n))"
+            + "  max|ref| \(String(format: "%.4g", refMax))  old first bad row \(firstBad) \(pass ? "✅" : "❌")")
+        GPU.clearCache()
+    }
+
+    // (2) K images of 1008×1008 (72×72 patches, t = 1), past both boundaries; the last one differs.
+    let per = 72 * 72
+    let k = 350_000 / per + 1  // 68 images, 352,512 patches
+    let rest = MLXRandom.uniform(low: -1, high: 1, [(k - 1) * per, rowLen], key: MLXRandom.key(1))
+    let last = MLXRandom.uniform(low: -1, high: 1, [per, rowLen], key: MLXRandom.key(2))
+    let all = concatenated([rest, last], axis: 0).asType(.bfloat16)
+    let lastOnly = last.asType(.bfloat16)
+    let alone = embed(lastOnly)
+    let tail = embed(all)[((k - 1) * per)...]
+    let oldTail = ExactConv.conv3d(
+        all.reshaped(-1, c, kt, p, p).movedAxis(source: 1, destination: 4), weight: w, stride: (kt, p, p)
+    ).reshaped(-1, o)[((k - 1) * per)...]
+    eval(alone, tail, oldTail)
+    let cos = cosine(tail, alone)
+    let pass = cos >= 0.99999
+    ok = ok && pass
+    err("(2) \(k) images × \(per) patches = \(k * per): last image vs alone, matmul cos \(cos)"
+        + " max|Δ| \(abs(tail.asType(.float32) - alone.asType(.float32)).max().item(Float.self))"
+        + "  (old ExactConv cos \(cosine(oldTail, alone))) \(pass ? "✅" : "❌")")
+    err(ok ? "[gate] PASS — patch embed exact past 262,144 patches" : "[gate] FAIL")
+    exit(ok ? 0 : 1)
 }
 
 // (tier, hidden N, ffn K) for the checkpoints this package serves. Window opens at

@@ -4,7 +4,6 @@
 
 import Foundation
 import MLX
-import MLXExactConv
 import MLXNN
 
 public class QVLVisionRotaryEmbedding {
@@ -64,15 +63,17 @@ public class QVLPatchEmbed: Module, UnaryLayer {
             -1, inChannels, temporalPatchSize, patchSize, patchSize
         ).movedAxis(source: 1, destination: 4)
 
-        // Through ExactConv, not `proj(_:)`: a 3-channel conv3d is what mlx 0.32.2's
-        // `pad_and_slice_conv_3D_gpu` serves, and that helper frees its zero fill value while the GPU
-        // still reads it — under a capped buffer cache (the Image Engine's 2 GiB) the process dies
-        // with "Invalid Resource" (AB-T-0214). ExactConv pads the channels to 16 in the graph and
-        // runs the same implicit GEMM; `proj` keeps the weight and its key.
-        hiddenStates = ExactConv.conv3d(
-            hiddenStates, weight: proj.weight, bias: proj.bias,
-            stride: (temporalPatchSize, patchSize, patchSize))
-        hiddenStates = hiddenStates.reshaped(-1, outputDimensions)
+        // A matmul, not a conv (AB-T-0466). Kernel == stride, so each output row is one dot product of
+        // a (T, P, P, C) patch with the (O, kT, kH, kW, C) weight — the same channels-last layout. The
+        // conv route (ExactConv, and plain conv3d before it) padded the 3 channels to 16, and mlx's
+        // `pad_gpu` loses values past 2^31 destination elements (ml-explore/mlx#4735; the fix,
+        // ml-explore/mlx#4744, is unreleased in 0.32.x), so a request over 262,144 patches got garbage
+        // rows for its newest images. The matmul pads nothing, so it also stays clear of mlx 0.32.2's
+        // `pad_and_slice_conv_3D_gpu` use-after-free (AB-T-0214). `proj` keeps the weight and its key.
+        let n = hiddenStates.dim(0)
+        hiddenStates = matmul(
+            hiddenStates.reshaped(n, -1), proj.weight.reshaped(outputDimensions, -1).T)
+        if let bias = proj.bias { hiddenStates = hiddenStates + bias }
         return hiddenStates
     }
 }

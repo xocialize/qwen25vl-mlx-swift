@@ -33,8 +33,8 @@ let package = Package(
         // target stays engine-agnostic. ≥0.27.0: run-lifecycle V4 — the CAN
         // cancellation-conformance gate (MLXServeConformance CAN-1..3).
         .package(url: "https://github.com/xocialize/mlx-engine-swift", from: "0.27.0"),
-        // ≥ 0.1.1: the vision patch embed (a 3-channel conv3d) never reaches mlx 0.32.2's
-        // channel-pad helper, which frees a buffer the GPU still reads (AB-T-0214).
+        // Tests and the gate only: the patch embed is a matmul now (AB-T-0466). The test uses ExactConv's
+        // pad-helper predicate (AB-T-0214); the gate's --patch-embed-probe compares against the old route.
         .package(url: "https://github.com/xocialize/mlx-exact-conv-swift", from: "0.1.1"),
     ],
     targets: [
@@ -44,7 +44,6 @@ let package = Package(
                 .product(name: "MLX", package: "mlx-swift"),
                 .product(name: "MLXNN", package: "mlx-swift"),
                 .product(name: "MLXFast", package: "mlx-swift"),
-                .product(name: "MLXExactConv", package: "mlx-exact-conv-swift"),
                 .product(name: "MLXVLM", package: "mlx-swift-lm"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "Tokenizers", package: "swift-transformers"),
@@ -68,6 +67,8 @@ let package = Package(
             name: "Qwen25VLGate",
             dependencies: [
                 "Qwen25VL",
+                .product(name: "MLXRandom", package: "mlx-swift"),
+                .product(name: "MLXExactConv", package: "mlx-exact-conv-swift"),
                 .product(name: "MLX", package: "mlx-swift"),
                 .product(name: "MLXNN", package: "mlx-swift"),
             ],
